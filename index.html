@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>펜 강화 게임</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-5px) rotate(-3deg); }
+            20%, 40%, 60%, 80% { transform: translateX(5px) rotate(3deg); }
+        }
+        @keyframes pop {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.15); }
+            100% { transform: scale(1); }
+        }
+        .animate-shake { animation: shake 0.5s ease-in-out; }
+        .animate-pop { animation: pop 0.4s ease-out; }
+        
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex justify-center font-sans antialiased">
+
+    <div class="w-full max-w-md bg-gray-900 shadow-2xl flex flex-col h-screen max-h-screen relative">
+        
+        <!-- 헤더 영역 -->
+        <header class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-800 shadow-sm z-10">
+            <h1 class="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+                🖊️ Pen Enhancement
+            </h1>
+            <div class="flex items-center gap-2">
+                <span class="text-gray-400 text-sm">보유 금액</span>
+                <span class="text-yellow-400 font-mono font-bold text-lg" id="money-display">5,000</span>
+                <span class="text-yellow-400 text-sm">원</span>
+            </div>
+        </header>
+
+        <!-- 메인 게임 영역 -->
+        <main class="flex-1 flex flex-col p-4 gap-4 overflow-y-auto pb-6">
+            
+            <!-- 펜 상태 디스플레이 -->
+            <div id="pen-card" class="bg-gray-800 rounded-2xl p-6 flex flex-col items-center justify-center shadow-lg border border-gray-700 transition-colors duration-300 min-h-[260px]">
+                
+                <!-- 이미지 컨테이너 -->
+                <div id="pen-image-container" class="w-36 h-36 mb-4 relative rounded-2xl shadow-xl transition-transform duration-300 border-2 border-gray-600 bg-gray-700 flex items-center justify-center overflow-hidden">
+                    <canvas id="sprite-canvas" class="w-full h-full object-cover"></canvas>
+                </div>
+
+                <div class="flex items-center gap-2 mb-2">
+                    <span id="pen-level-badge" class="bg-gray-700 text-white text-xs font-bold px-2 py-1 rounded-md">+0</span>
+                    <h2 id="pen-name" class="text-2xl font-bold text-white tracking-tight">맨손</h2>
+                </div>
+                <p id="pen-desc" class="text-gray-400 text-center text-sm break-keep">아무것도 쥐고 있지 않다. 강화를 시작해보자.</p>
+            </div>
+
+            <!-- 스탯 패널 -->
+            <div class="bg-gray-800 rounded-2xl p-4 shadow-lg grid grid-cols-2 gap-3 border border-gray-700">
+                <div class="bg-gray-900/50 p-3 rounded-xl flex flex-col justify-center items-center">
+                    <div class="text-gray-400 text-xs mb-1">다음 강화 비용</div>
+                    <div class="flex items-baseline gap-1">
+                        <span id="upgrade-cost" class="text-red-400 font-mono font-bold text-lg">100</span>
+                        <span class="text-red-400 text-xs">원</span>
+                    </div>
+                </div>
+                <div class="bg-gray-900/50 p-3 rounded-xl flex flex-col justify-center items-center">
+                    <div class="text-gray-400 text-xs mb-1">강화 성공 확률</div>
+                    <div class="flex items-baseline gap-1">
+                        <span id="success-prob" class="text-green-400 font-mono font-bold text-lg">100</span>
+                        <span class="text-green-400 text-xs">%</span>
+                    </div>
+                </div>
+                <div class="bg-gray-900/50 p-3 rounded-xl col-span-2 flex justify-between items-center px-4">
+                    <div class="text-gray-400 text-sm">현재 판매 가격</div>
+                    <div class="flex items-baseline gap-1">
+                        <span id="sell-price" class="text-yellow-400 font-mono font-bold text-xl">0</span>
+                        <span class="text-yellow-400 text-sm">원</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 컨트롤 버튼 -->
+            <div class="flex gap-3 mt-auto relative z-10">
+                <button id="btn-sell" class="flex-1 py-4 rounded-xl bg-orange-600 hover:bg-orange-500 active:bg-orange-700 font-bold shadow-lg shadow-orange-900/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all">
+                    판매하기
+                </button>
+                <button id="btn-enhance" class="flex-[2] py-4 rounded-xl bg-blue-600 hover:bg-blue-500 active:bg-blue-700 font-bold shadow-lg shadow-blue-900/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-lg flex items-center justify-center gap-2">
+                    강화하기
+                </button>
+            </div>
+
+            <!-- 게임 로그 -->
+            <div class="bg-black/40 rounded-xl p-3 h-32 overflow-y-auto text-sm font-mono flex flex-col gap-1 border border-gray-800" id="log-box">
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // --- 게임 데이터 (제공해주신 1~30번 이미지 순서 및 목록 100% 매칭) ---
+        const penList = [
+            { name: "맨손", desc: "아무것도 쥐고 있지 않다. 강화를 시작해보자.", gridIndex: -1 }, // 0단계 (맨손)
+            { name: "흑연", desc: "겨우 표시만 할수 있을 정도로 열악한 펜이다", gridIndex: 0 },   // 1
+            { name: "분필", desc: "흑연이랑 별 차이는 없지만 정형화된 펜이다", gridIndex: 1 },   // 2
+            { name: "몽당연필", desc: "너무 짧지만 그럭저럭 쓸만하다", gridIndex: 2 },       // 3
+            { name: "평범한 연필", desc: "연필이다", gridIndex: 3 },                       // 4
+            { name: "샤프", desc: "연필의 상위호환, 샤프심은 별도이다", gridIndex: 4 },     // 5
+            { name: "고오급 샤프", desc: "일반 샤프와 거의 똑같지만 이걸 쓰면 기분이 더 좋다", gridIndex: 5 }, // 6
+            { name: "볼펜", desc: "진하고 부드럽다 유일한 단점은 지워지지 않는다", gridIndex: 6 }, // 7
+            { name: "사인펜", desc: "정작 사인할땐 안쓰는게 함정이다", gridIndex: 7 },     // 8
+            { name: "컴퓨터용 사인펜", desc: "수험생의 필수품이지만 시험 일주일 전부터 모습을 감춘다", gridIndex: 8 }, // 9
+            { name: "네임펜", desc: "검정 사인펜 대체품으로 주로 쓰인다", gridIndex: 9 },   // 10
+            { name: "보드마카", desc: "잘나오는 보드마카는 본적이 없다", gridIndex: 10 },    // 11
+            { name: "유성매직", desc: "미술시간 끝판왕, 쓰고나면 책상이 알록달록해진다", gridIndex: 11 }, // 12
+            { name: "붓펜", desc: "3년에 일주일 정도 쓴다", gridIndex: 12 },               // 13
+            { name: "만년필", desc: "만년필이지만 잉크 리필은 해본적 없다", gridIndex: 13 }, // 14
+            { name: "깃펜", desc: "영화에 자주 나오지만 실제로는 필기감이 엉망이다", gridIndex: 14 }, // 15
+            { name: "형광펜", desc: "색깔별로 다 있지만 그중 반만 쓴다", gridIndex: 15 },   // 16
+            { name: "수정펜", desc: "펜의 반물질이다", gridIndex: 16 },                   // 17
+            { name: "갤럭시 S펜", desc: "갤럭시 탭에 딸려있다", gridIndex: 17 },           // 18
+            { name: "애플펜슬", desc: "펜파인애플 애플펜", gridIndex: 18 },             // 19
+            { name: "3D펜", desc: "안녕하세요 3D펜 장인 사나고입니다.", gridIndex: 19 },     // 20
+            { name: "프라이팬", desc: "엉덩이 보호구이다.", gridIndex: 20 },               // 21
+            { name: "열혈팬", desc: "굉장히 열심인 펜이다", gridIndex: 21 },               // 22
+            { name: "사생팬", desc: "정도 지 지나친 팬이다.", gridIndex: 22 },             // 23
+            { name: "안티팬", desc: "팬의 반물질이다.", gridIndex: 23 },                   // 24
+            { name: "피터팬", desc: "네버랜드 미라클 시티 워우예", gridIndex: 24 },         // 25
+            { name: "실링팬", desc: "천장에 달린 팬이다 사실 효과가 체감되지 않는다", gridIndex: 25 }, // 26
+            { name: "재팬", desc: "료이키 텐카이 무료쿠죠 아카 아오 무라사키", gridIndex: 26 }, // 27 (첫 번째 27)
+            { name: "막스베르스타펜", desc: "뚜뚜뚜뚜 막스 베르스타펜", gridIndex: 27 },   // 28 (두 번째 27)
+            { name: "아르센뤼팬", desc: "괴도 루팡의 본토 발음이다", gridIndex: 28 },       // 29
+            { name: "라이프스팬", desc: "인생 펜", gridIndex: 29 },                       // 30
+            { name: "투명펜", desc: "투명 펜이 울부짖었다 투명펜은 최강이다. 크아아앙", gridIndex: 29 } // 31 (초과 단계용)
+        ];
+
+        const defaultPen = { name: "초월의 펜", desc: "한계를 넘어선 무언가...", gridIndex: 29 };
+
+        let money = 5000;
+        let currentLevel = 0;
+
+        const elMoney = document.getElementById('money-display');
+        const elPenImageContainer = document.getElementById('pen-image-container');
+        const canvas = document.getElementById('sprite-canvas');
+        const ctx = canvas.getContext('2d');
+        const elPenBadge = document.getElementById('pen-level-badge');
+        const elPenName = document.getElementById('pen-name');
+        const elPenDesc = document.getElementById('pen-desc');
+        const elUpgradeCost = document.getElementById('upgrade-cost');
+        const elSuccessProb = document.getElementById('success-prob');
+        const elSellPrice = document.getElementById('sell-price');
+        const btnEnhance = document.getElementById('btn-enhance');
+        const btnSell = document.getElementById('btn-sell');
+        const elLogBox = document.getElementById('log-box');
+        const elPenCard = document.getElementById('pen-card');
+
+        // 원본 이미지 로드
+        const sourceImage = new Image();
+        sourceImage.src = '1513.png'; // 사용자가 업로드한 이미지 파일명
+        
+        sourceImage.onload = () => {
+            updateUI(null);
+        };
+
+        function formatNumber(num) { return num.toLocaleString('ko-KR'); }
+
+        function getSuccessProb(level) {
+            if (level < 15) return 100 - (level * 5); 
+            else if (level < 24) return 30 - ((level - 14) * 3);
+            else return 1;
+        }
+
+        function getUpgradeCost(level) { return Math.floor(100 * Math.pow(2.5, level)); }
+        function getCumulativeCost(level) {
+            let total = 0;
+            for (let i = 0; i < level; i++) total += getUpgradeCost(i);
+            return total;
+        }
+        function getSellPrice(level) {
+            if (level === 0) return 0;
+            return Math.floor(getCumulativeCost(level) * 1.5);
+        }
+
+        function getPenData(level) { return level < penList.length ? penList[level] : defaultPen; }
+
+        function addLog(message, colorClass = "text-gray-300") {
+            const logEntry = document.createElement('div');
+            logEntry.className = colorClass;
+            const time = new Date().toLocaleTimeString('ko-KR', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            logEntry.innerHTML = `<span class="text-gray-600">[${time}]</span> ${message}`;
+            elLogBox.appendChild(logEntry);
+            elLogBox.scrollTop = elLogBox.scrollHeight;
+        }
+
+        // 6행 6열 그리드에서 해당 아이템을 잘라와서 캔버스에 그리기
+        function drawPenImage(gridIndex, isSuccessAnimation) {
+            canvas.width = 300;
+            canvas.height = 300;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (gridIndex === -1) {
+                // 0단계 맨손 (기본 플레이어 아이콘 대체 텍스트 혹은 심플한 그리기)
+                ctx.fillStyle = "#9ca3af";
+                ctx.font = "bold 30px sans-serif";
+                ctx.textAlign = "center";
+                ctx.fillText("EMPTY HANDS", canvas.width / 2, canvas.height / 2);
+            } else if (sourceImage.complete && sourceImage.naturalWidth !== 0) {
+                // 6행 6열 그리드 계산
+                const cols = 6;
+                const rows = 6;
+                const imgW = sourceImage.naturalWidth;
+                const imgH = sourceImage.naturalHeight;
+                const cellW = imgW / cols;
+                const cellH = imgH / rows;
+
+                const col = gridIndex % cols;
+                const row = Math.floor(gridIndex / cols);
+
+                ctx.drawImage(
+                    sourceImage,
+                    col * cellW, row * cellH, cellW, cellH,
+                    0, 0, canvas.width, canvas.height
+                );
+            }
+
+            // 애니메이션 처리
+            elPenImageContainer.classList.remove('animate-pop', 'animate-shake');
+            void elPenImageContainer.offsetWidth;
+
+            if (isSuccessAnimation === true) {
+                elPenImageContainer.classList.add('animate-pop');
+                elPenCard.classList.add('bg-green-900/30');
+            } else if (isSuccessAnimation === false) {
+                elPenImageContainer.classList.add('animate-shake');
+                elPenCard.classList.add('bg-red-900/30');
+            }
+
+            setTimeout(() => {
+                elPenCard.classList.remove('bg-red-900/30', 'bg-green-900/30');
+            }, 500);
+        }
+
+        function updateUI(triggerAnimation = null) {
+            elMoney.textContent = formatNumber(money);
+            
+            const pen = getPenData(currentLevel);
+            elPenName.textContent = pen.name;
+            elPenDesc.textContent = pen.desc;
+            elPenBadge.textContent = `+${currentLevel}`;
+
+            if(currentLevel === 0) elPenBadge.className = "bg-gray-700 text-white text-xs font-bold px-2 py-1 rounded-md";
+            else if(currentLevel < 10) elPenBadge.className = "bg-blue-600 text-white text-xs font-bold px-2 py-1 rounded-md";
+            else if(currentLevel < 20) elPenBadge.className = "bg-purple-600 text-white text-xs font-bold px-2 py-1 rounded-md";
+            else elPenBadge.className = "bg-red-600 text-white text-xs font-bold px-2 py-1 rounded-md animate-pulse";
+
+            const cost = getUpgradeCost(currentLevel);
+            elUpgradeCost.textContent = formatNumber(cost);
+            elSuccessProb.textContent = getSuccessProb(currentLevel);
+            elSellPrice.textContent = formatNumber(getSellPrice(currentLevel));
+
+            drawPenImage(pen.gridIndex, triggerAnimation);
+            
+            btnEnhance.disabled = money < cost;
+            btnSell.disabled = currentLevel === 0;
+        }
+
+        function enhance() {
+            const cost = getUpgradeCost(currentLevel);
+            const prob = getSuccessProb(currentLevel);
+
+            if (money < cost) {
+                addLog("자본이 부족합니다!", "text-red-400");
+                return;
+            }
+
+            money -= cost;
+            const rand = Math.random() * 100;
+            const isSuccess = rand < prob;
+
+            if (isSuccess) {
+                currentLevel++;
+                const nextPen = getPenData(currentLevel);
+                addLog(`+${currentLevel} ${nextPen.name} (으)로 강화 성공!`, "text-green-400 font-bold");
+                updateUI(true); 
+            } else {
+                addLog(`강화 실패... 펜이 파괴되어 [맨손]이 되었습니다.`, "text-red-400");
+                currentLevel = 0;
+                updateUI(false); 
+            }
+        }
+
+        function sell() {
+            if (currentLevel === 0) return;
+
+            const sellValue = getSellPrice(currentLevel);
+            money += sellValue;
+            
+            const penName = getPenData(currentLevel).name;
+            addLog(`+${currentLevel} ${penName}을(를) 판매하여 ${formatNumber(sellValue)}원을 얻었습니다.`, "text-yellow-400");
+            
+            currentLevel = 0;
+            updateUI(null); 
+        }
+
+        btnEnhance.addEventListener('click', enhance);
+        btnSell.addEventListener('click', sell);
+
+        addLog("게임을 시작합니다. 기본 자본 5,000원이 지급되었습니다.", "text-blue-300");
+        updateUI(null);
+
+    </script>
+</body>
+</html>
