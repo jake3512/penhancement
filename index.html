@@ -313,6 +313,105 @@
   .btn-sell1{ background:rgba(201,162,39,0.14); color:var(--gold-bright); }
   .btn-sellall{ background:rgba(201,162,39,0.24); color:var(--gold-bright); }
 
+  /* ranking */
+  .rank-section{ margin-top:22px; }
+  .my-best{
+    background:var(--ink-2);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:12px 14px;
+    margin-bottom:12px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+  }
+  .my-best-label{
+    font-size:12px;
+    color:rgba(241,233,216,0.5);
+  }
+  .my-best-value{
+    font-family:'JetBrains Mono', monospace;
+    font-size:13px;
+    color:var(--gold-bright);
+    font-weight:600;
+  }
+  .rank-register{
+    display:flex;
+    gap:8px;
+    margin-bottom:6px;
+  }
+  .rank-register input{
+    flex:1;
+    min-width:0;
+    background:var(--ink-2);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:11px 12px;
+    color:var(--paper);
+    font-family:'Space Grotesk', sans-serif;
+    font-size:14px;
+  }
+  .rank-register input::placeholder{ color:rgba(241,233,216,0.35); }
+  .rank-register input:focus{ outline:2px solid var(--gold); outline-offset:1px; }
+  .btn-rank-submit{
+    background:var(--gold);
+    color:var(--ink);
+    border-radius:10px;
+    padding:11px 16px;
+    font-size:13px;
+    white-space:nowrap;
+  }
+  .btn-rank-submit:disabled{
+    background:#4a4530;
+    color:rgba(241,233,216,0.4);
+    cursor:not-allowed;
+  }
+  .rank-note{
+    font-size:11px;
+    color:rgba(241,233,216,0.35);
+    margin-bottom:12px;
+  }
+  .rank-list{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+  }
+  .rank-row{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    background:var(--ink-2);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:10px 12px;
+  }
+  .rank-row.me{ border-color:var(--gold); }
+  .rank-pos{
+    font-family:'JetBrains Mono', monospace;
+    font-size:14px;
+    font-weight:700;
+    color:var(--gold);
+    width:22px;
+    text-align:center;
+    flex-shrink:0;
+  }
+  .rank-icon{
+    width:34px;height:34px;
+    border-radius:50%;
+    background:rgba(201,162,39,0.10);
+    border:1px solid rgba(201,162,39,0.3);
+    display:flex;align-items:center;justify-content:center;
+    font-size:17px;
+    flex-shrink:0;
+  }
+  .rank-info{ flex:1; min-width:0; }
+  .rank-info .n{ font-size:13px; font-weight:600; }
+  .rank-info .m{
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px;
+    color:rgba(241,233,216,0.45);
+  }
+
   /* floating revive button */
   .revive{
     position:fixed;
@@ -391,11 +490,29 @@
     </div>
     <div id="invBody"></div>
   </section>
+
+  <section class="inv rank-section">
+    <div class="inv-head">
+      <h2>랭킹</h2>
+      <span class="count">보관한 최고 등급 기준</span>
+    </div>
+    <div class="my-best">
+      <div class="my-best-label">내 최고 기록</div>
+      <div class="my-best-value" id="myBestValue">아직 보관한 펜이 없습니다</div>
+    </div>
+    <div class="rank-register">
+      <input type="text" id="nickInput" placeholder="닉네임 입력" maxlength="12">
+      <button class="btn-rank-submit" id="rankSubmitBtn">랭킹에 등록</button>
+    </div>
+    <div class="rank-note">등록한 닉네임과 기록은 다른 사용자에게 공개됩니다.</div>
+    <div id="rankBody"></div>
+  </section>
 </div>
 
 <div class="revive">
   <button id="reviveBtn">🩹 회생 — 클릭당 +0.5원</button>
 </div>
+
 
 <script>
 const PENS = [
@@ -453,13 +570,16 @@ function sellPrice(level){
 let money = 5000;
 let currentLevel = 0;
 let inventory = new Array(PENS.length).fill(0);
+let bestEverStoredLevel = -1; // 보관함에 넣어본 펜 중 가장 높은 등급 (-1 = 없음)
 
 const $ = id => document.getElementById(id);
 const moneyEl = $("money"), levelTagEl = $("levelTag"), medallionEl = $("medallion"),
       penNameEl = $("penName"), penDescEl = $("penDesc"), statRateEl = $("statRate"),
       statCostEl = $("statCost"), statSellEl = $("statSell"), enhanceBtn = $("enhanceBtn"),
       guaranteeBtn = $("guaranteeBtn"), storeBtn = $("storeBtn"), sellCurrentBtn = $("sellCurrentBtn"), toastEl = $("toast"),
-      invBody = $("invBody"), invCountEl = $("invCount"), reviveBtn = $("reviveBtn");
+      invBody = $("invBody"), invCountEl = $("invCount"), reviveBtn = $("reviveBtn"),
+      myBestValueEl = $("myBestValue"), nickInput = $("nickInput"), rankSubmitBtn = $("rankSubmitBtn"),
+      rankBody = $("rankBody");
 
 function fmt(n){
   const rounded = Math.round(n*10)/10;
@@ -514,6 +634,7 @@ function render(){
   }
 
   renderInventory();
+  renderMyBest();
 }
 
 function renderInventory(){
@@ -561,6 +682,101 @@ function renderInventory(){
     });
   });
 }
+
+function renderMyBest(){
+  if(bestEverStoredLevel < 0){
+    myBestValueEl.textContent = "아직 보관한 펜이 없습니다";
+  } else {
+    myBestValueEl.textContent = bestEverStoredLevel + "단계 · " + PENS[bestEverStoredLevel].name;
+  }
+  rankSubmitBtn.disabled = bestEverStoredLevel < 0;
+}
+
+function sanitizeNick(raw){
+  const trimmed = raw.trim().slice(0, 12);
+  return trimmed.replace(/[\s\/\\'"]/g, "");
+}
+
+async function loadLeaderboard(){
+  rankBody.innerHTML = '<div class="empty-state">랭킹을 불러오는 중...</div>';
+  try{
+    const listResult = await window.storage.list('leaderboard:', true);
+    const keys = (listResult && listResult.keys) ? listResult.keys : [];
+    if(keys.length === 0){
+      rankBody.innerHTML = '<div class="empty-state">아직 등록된 랭킹이 없습니다.<br>가장 먼저 기록을 등록해보세요.</div>';
+      return;
+    }
+    const entries = [];
+    for(const key of keys){
+      try{
+        const res = await window.storage.get(key, true);
+        if(res && res.value){
+          const parsed = JSON.parse(res.value);
+          if(typeof parsed.level === "number" && parsed.name){
+            entries.push(parsed);
+          }
+        }
+      } catch(e){ /* skip unreadable entry */ }
+    }
+    entries.sort((a,b) => b.level - a.level);
+    renderLeaderboard(entries.slice(0, 20));
+  } catch(e){
+    rankBody.innerHTML = '<div class="empty-state">랭킹을 불러오지 못했습니다.</div>';
+  }
+}
+
+function renderLeaderboard(entries){
+  if(entries.length === 0){
+    rankBody.innerHTML = '<div class="empty-state">아직 등록된 랭킹이 없습니다.<br>가장 먼저 기록을 등록해보세요.</div>';
+    return;
+  }
+  const myNick = sanitizeNick(nickInput.value || "");
+  rankBody.innerHTML = '<div class="rank-list" id="rankList"></div>';
+  const list = $("rankList");
+  entries.forEach((entry, idx) => {
+    const pen = PENS[entry.level] || PENS[0];
+    const row = document.createElement("div");
+    row.className = "rank-row" + (myNick && entry.name === myNick ? " me" : "");
+    row.innerHTML = `
+      <div class="rank-pos">${idx + 1}</div>
+      <div class="rank-icon">${pen.icon}</div>
+      <div class="rank-info">
+        <div class="n">${entry.name}</div>
+        <div class="m">${entry.level}단계 · ${pen.name}</div>
+      </div>`;
+    list.appendChild(row);
+  });
+}
+
+rankSubmitBtn.addEventListener("click", async () => {
+  const nick = sanitizeNick(nickInput.value || "");
+  if(!nick){
+    setToast("닉네임을 입력해주세요.", "fail");
+    return;
+  }
+  if(bestEverStoredLevel < 0){
+    setToast("먼저 펜을 보관함에 보관해야 등록할 수 있습니다.", "fail");
+    return;
+  }
+  rankSubmitBtn.disabled = true;
+  try{
+    const payload = JSON.stringify({
+      name: nick,
+      level: bestEverStoredLevel,
+      updatedAt: Date.now()
+    });
+    const result = await window.storage.set('leaderboard:' + nick, payload, true);
+    if(result){
+      setToast(nick + "님의 기록이 랭킹에 등록되었습니다.", "success");
+      await loadLeaderboard();
+    } else {
+      setToast("랭킹 등록에 실패했습니다.", "fail");
+    }
+  } catch(e){
+    setToast("랭킹 등록 중 오류가 발생했습니다.", "fail");
+  }
+  rankSubmitBtn.disabled = bestEverStoredLevel < 0;
+});
 
 function pulseMedallion(){
   medallionEl.classList.remove("pulse");
@@ -612,6 +828,9 @@ sellCurrentBtn.addEventListener("click", () => {
 
 storeBtn.addEventListener("click", () => {
   inventory[currentLevel] += 1;
+  if(currentLevel > bestEverStoredLevel){
+    bestEverStoredLevel = currentLevel;
+  }
   setToast(PENS[currentLevel].name + "을(를) 보관함에 보관했습니다. 새 펜부터 다시 시작합니다.", "info");
   currentLevel = 0;
   render();
@@ -632,6 +851,7 @@ reviveBtn.addEventListener("click", () => {
 });
 
 render();
+loadLeaderboard();
 </script>
 </body>
 </html>
