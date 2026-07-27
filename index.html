@@ -76,6 +76,18 @@
     color:rgba(241,233,216,0.5);
     letter-spacing:.1em;
   }
+  .reset-link{
+    display:block;
+    margin:10px auto 0;
+    background:none;
+    border:none;
+    font-family:'JetBrains Mono', monospace;
+    font-size:10px;
+    color:rgba(241,233,216,0.3);
+    text-decoration:underline;
+    padding:4px;
+  }
+  .reset-link:hover{ color:rgba(241,233,216,0.55); }
 
   /* seal / current pen card */
   .stage{
@@ -448,6 +460,7 @@
       <span class="amt" id="money">5,000</span>
       <span class="label">원 보유</span>
     </div>
+    <button class="reset-link" id="resetBtn">데이터 초기화</button>
   </header>
 
   <div class="stage">
@@ -571,6 +584,8 @@ let money = 5000;
 let currentLevel = 0;
 let inventory = new Array(PENS.length).fill(0);
 let bestEverStoredLevel = -1; // 보관함에 넣어본 펜 중 가장 높은 등급 (-1 = 없음)
+let stateReady = false; // 저장된 데이터 로드가 끝나기 전까지는 자동저장하지 않음
+const STATE_KEY = "game-state";
 
 const $ = id => document.getElementById(id);
 const moneyEl = $("money"), levelTagEl = $("levelTag"), medallionEl = $("medallion"),
@@ -579,7 +594,7 @@ const moneyEl = $("money"), levelTagEl = $("levelTag"), medallionEl = $("medalli
       guaranteeBtn = $("guaranteeBtn"), storeBtn = $("storeBtn"), sellCurrentBtn = $("sellCurrentBtn"), toastEl = $("toast"),
       invBody = $("invBody"), invCountEl = $("invCount"), reviveBtn = $("reviveBtn"),
       myBestValueEl = $("myBestValue"), nickInput = $("nickInput"), rankSubmitBtn = $("rankSubmitBtn"),
-      rankBody = $("rankBody");
+      rankBody = $("rankBody"), resetBtn = $("resetBtn");
 
 function fmt(n){
   const rounded = Math.round(n*10)/10;
@@ -589,6 +604,30 @@ function fmt(n){
 function setToast(msg, type){
   toastEl.textContent = msg;
   toastEl.className = "toast " + type;
+}
+
+async function saveState(){
+  try{
+    const payload = JSON.stringify({
+      money, currentLevel, inventory, bestEverStoredLevel,
+      nick: nickInput ? nickInput.value : ""
+    });
+    await window.storage.set(STATE_KEY, payload, false);
+  } catch(e){ /* best-effort; ignore failures */ }
+}
+
+async function loadState(){
+  try{
+    const res = await window.storage.get(STATE_KEY, false);
+    if(res && res.value){
+      const d = JSON.parse(res.value);
+      if(typeof d.money === "number") money = d.money;
+      if(typeof d.currentLevel === "number" && d.currentLevel >= 0 && d.currentLevel < PENS.length) currentLevel = d.currentLevel;
+      if(Array.isArray(d.inventory) && d.inventory.length === PENS.length) inventory = d.inventory;
+      if(typeof d.bestEverStoredLevel === "number") bestEverStoredLevel = d.bestEverStoredLevel;
+      if(d.nick) nickInput.value = d.nick;
+    }
+  } catch(e){ /* no saved data yet, start fresh */ }
 }
 
 function render(){
@@ -635,6 +674,7 @@ function render(){
 
   renderInventory();
   renderMyBest();
+  if(stateReady) saveState();
 }
 
 function renderInventory(){
@@ -769,6 +809,7 @@ rankSubmitBtn.addEventListener("click", async () => {
     if(result){
       setToast(nick + "님의 기록이 랭킹에 등록되었습니다.", "success");
       await loadLeaderboard();
+      saveState();
     } else {
       setToast("랭킹 등록에 실패했습니다.", "fail");
     }
@@ -850,8 +891,24 @@ reviveBtn.addEventListener("click", () => {
   render();
 });
 
-render();
-loadLeaderboard();
+resetBtn.addEventListener("click", async () => {
+  const ok = confirm("저장된 자본, 강화 진행상황, 보관함 데이터를 모두 초기화할까요? 랭킹에 등록된 기록은 남아있습니다.");
+  if(!ok) return;
+  money = 5000;
+  currentLevel = 0;
+  inventory = new Array(PENS.length).fill(0);
+  bestEverStoredLevel = -1;
+  setToast("데이터가 초기화되었습니다.", "info");
+  render();
+});
+
+async function init(){
+  await loadState();
+  stateReady = true;
+  render();
+  loadLeaderboard();
+}
+init();
 </script>
 </body>
 </html>
