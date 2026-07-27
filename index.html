@@ -325,6 +325,61 @@
   .btn-sell1{ background:rgba(201,162,39,0.14); color:var(--gold-bright); }
   .btn-sellall{ background:rgba(201,162,39,0.24); color:var(--gold-bright); }
 
+  /* shop */
+  .shop-group-title{
+    font-size:13px;
+    font-weight:600;
+    color:rgba(241,233,216,0.75);
+    margin-bottom:8px;
+  }
+  .shop-group-sub{
+    font-weight:400;
+    font-size:11px;
+    color:rgba(241,233,216,0.4);
+    margin-left:4px;
+  }
+  .shop-row{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    background:var(--ink-2);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:10px 12px;
+  }
+  .shop-row.locked{ opacity:0.5; }
+  .shop-icon{
+    width:38px;height:38px;
+    border-radius:50%;
+    background:rgba(201,162,39,0.10);
+    border:1px solid rgba(201,162,39,0.3);
+    display:flex;align-items:center;justify-content:center;
+    font-size:19px;
+    flex-shrink:0;
+  }
+  .shop-info{ flex:1; min-width:0; }
+  .shop-info .n{ font-size:14px; font-weight:600; }
+  .shop-info .m{
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px;
+    color:rgba(241,233,216,0.45);
+  }
+  .btn-buy{
+    background:rgba(201,162,39,0.24);
+    color:var(--gold-bright);
+    padding:9px 14px;
+    font-size:12px;
+    border-radius:8px;
+    white-space:nowrap;
+    flex-shrink:0;
+  }
+  .btn-buy:disabled{
+    background:transparent;
+    color:rgba(241,233,216,0.3);
+    border:1px solid var(--line);
+    cursor:not-allowed;
+  }
+
   /* ranking */
   .rank-section{ margin-top:22px; }
   .my-best{
@@ -457,7 +512,7 @@
     <h1>P. Enhancement</h1>
     <div class="sub">펜을 강화하고, 보관하고, 팔아라</div>
     <div class="ledger">
-      <span class="amt" id="money">5,000</span>
+      <span class="amt" id="money">10,000</span>
       <span class="label">원 보유</span>
     </div>
     <button class="reset-link" id="resetBtn">데이터 초기화</button>
@@ -495,6 +550,19 @@
 
     <div class="toast info" id="toast">준비 완료. 강화를 시작해보세요.</div>
   </div>
+
+  <section class="inv shop">
+    <div class="inv-head">
+      <h2>상점</h2>
+      <span class="count">보유 자본으로 구매</span>
+    </div>
+
+    <div class="shop-group-title">워프권 <span class="shop-group-sub">해당 등급에 도달한 적이 있어야 구매 가능</span></div>
+    <div id="warpBody" class="inv-list"></div>
+
+    <div class="shop-group-title" style="margin-top:16px;">실패 방지권 <span class="shop-group-sub">강화 실패 시 등급 유지 (1회 소모)</span></div>
+    <div id="guardBody" class="inv-list"></div>
+  </section>
 
   <section class="inv">
     <div class="inv-head">
@@ -609,10 +677,29 @@ function sellPrice(level){
   return Math.round(cumulativeSpent(level) * 1.5);
 }
 
-let money = 5000;
+const WARP_LEVELS = [4, 8, 12, 16, 20];
+const FAIL_GUARD_TIERS = [
+  { key:"t1", label:"10단계 미만용", refLevel:3 },
+  { key:"t2", label:"10~19단계용", refLevel:10 },
+  { key:"t3", label:"20단계 이상용", refLevel:20 },
+];
+function guardPrice(tier){ return sellPrice(tier.refLevel); }
+function tierForLevel(level){
+  if(level < 10) return "t1";
+  if(level < 20) return "t2";
+  return "t3";
+}
+function tierLabel(key){
+  const t = FAIL_GUARD_TIERS.find(t => t.key === key);
+  return t ? t.label : "";
+}
+
+let money = 10000;
 let currentLevel = 0;
 let inventory = new Array(PENS.length).fill(0);
 let bestEverStoredLevel = -1; // 보관함에 넣어본 펜 중 가장 높은 등급 (-1 = 없음)
+let maxLevelReached = 0; // 보관 여부와 무관하게 지금까지 도달해본 최고 등급 (워프권 잠금 해제 기준)
+let failGuards = { t1:0, t2:0, t3:0 }; // 보유 중인 실패 방지권 개수
 let stateReady = false; // 저장된 데이터 로드가 끝나기 전까지는 자동저장하지 않음
 const STATE_KEY = "game-state";
 
@@ -623,7 +710,11 @@ const moneyEl = $("money"), levelTagEl = $("levelTag"), medallionEl = $("medalli
       guaranteeBtn = $("guaranteeBtn"), storeBtn = $("storeBtn"), sellCurrentBtn = $("sellCurrentBtn"), toastEl = $("toast"),
       invBody = $("invBody"), invCountEl = $("invCount"), reviveBtn = $("reviveBtn"),
       myBestValueEl = $("myBestValue"), nickInput = $("nickInput"), rankSubmitBtn = $("rankSubmitBtn"),
-      rankBody = $("rankBody"), resetBtn = $("resetBtn");
+      rankBody = $("rankBody"), resetBtn = $("resetBtn"), warpBody = $("warpBody"), guardBody = $("guardBody");
+
+function markReached(level){
+  if(level > maxLevelReached) maxLevelReached = level;
+}
 
 function fmt(n){
   const rounded = Math.round(n*10)/10;
@@ -638,7 +729,7 @@ function setToast(msg, type){
 async function saveState(){
   try{
     const payload = JSON.stringify({
-      money, currentLevel, inventory, bestEverStoredLevel,
+      money, currentLevel, inventory, bestEverStoredLevel, maxLevelReached, failGuards,
       nick: nickInput ? nickInput.value : ""
     });
     localStorage.setItem(STATE_KEY, payload);
@@ -654,9 +745,19 @@ async function loadState(){
       if(typeof d.currentLevel === "number" && d.currentLevel >= 0 && d.currentLevel < PENS.length) currentLevel = d.currentLevel;
       if(Array.isArray(d.inventory) && d.inventory.length === PENS.length) inventory = d.inventory;
       if(typeof d.bestEverStoredLevel === "number") bestEverStoredLevel = d.bestEverStoredLevel;
+      if(typeof d.maxLevelReached === "number") maxLevelReached = d.maxLevelReached;
+      if(d.failGuards && typeof d.failGuards === "object"){
+        failGuards = {
+          t1: Number(d.failGuards.t1) || 0,
+          t2: Number(d.failGuards.t2) || 0,
+          t3: Number(d.failGuards.t3) || 0,
+        };
+      }
       if(d.nick) nickInput.value = d.nick;
     }
   } catch(e){ /* no saved data yet, start fresh */ }
+  markReached(currentLevel);
+  markReached(bestEverStoredLevel);
 }
 
 function render(){
@@ -702,6 +803,7 @@ function render(){
   }
 
   renderInventory();
+  renderShop();
   renderMyBest();
   if(stateReady) saveState();
 }
@@ -750,6 +852,82 @@ function renderInventory(){
       sellFromInventory(lvl, mode === "all" ? inventory[lvl] : 1);
     });
   });
+}
+
+function renderShop(){
+  // 워프권
+  warpBody.innerHTML = "";
+  WARP_LEVELS.forEach(lvl => {
+    const pen = PENS[lvl];
+    const unlocked = maxLevelReached >= lvl;
+    const price = sellPrice(lvl) * 10;
+    const row = document.createElement("div");
+    row.className = "shop-row" + (unlocked ? "" : " locked");
+    row.innerHTML = `
+      <div class="shop-icon">${unlocked ? pen.icon : "🔒"}</div>
+      <div class="shop-info">
+        <div class="n">${lvl}단계 워프권 · ${pen.name}</div>
+        <div class="m">${unlocked ? fmt(price) + "원" : "먼저 " + lvl + "단계에 도달해야 합니다"}</div>
+      </div>
+      <button class="btn-buy" data-warp="${lvl}" ${(!unlocked || money < price) ? "disabled" : ""}>구매</button>`;
+    warpBody.appendChild(row);
+  });
+  warpBody.querySelectorAll("button[data-warp]").forEach(btn => {
+    btn.addEventListener("click", () => buyWarp(parseInt(btn.dataset.warp, 10)));
+  });
+
+  // 실패 방지권
+  guardBody.innerHTML = "";
+  FAIL_GUARD_TIERS.forEach(tier => {
+    const price = guardPrice(tier);
+    const held = failGuards[tier.key] || 0;
+    const row = document.createElement("div");
+    row.className = "shop-row";
+    row.innerHTML = `
+      <div class="shop-icon">🛡️</div>
+      <div class="shop-info">
+        <div class="n">실패 방지권 (${tier.label})</div>
+        <div class="m">${fmt(price)}원 · 보유 ${held}개</div>
+      </div>
+      <button class="btn-buy" data-guard="${tier.key}" ${money < price ? "disabled" : ""}>구매</button>`;
+    guardBody.appendChild(row);
+  });
+  guardBody.querySelectorAll("button[data-guard]").forEach(btn => {
+    btn.addEventListener("click", () => buyGuard(btn.dataset.guard));
+  });
+}
+
+function buyWarp(level){
+  if(maxLevelReached < level) return;
+  const price = sellPrice(level) * 10;
+  if(money < price){
+    setToast("자본이 부족합니다.", "fail");
+    return;
+  }
+  if(currentLevel > 0 && currentLevel !== level){
+    const ok = confirm("현재 진행 중인 " + currentLevel + "단계 펜을 포기하고 " + level + "단계로 워프할까요?");
+    if(!ok) return;
+  }
+  money -= price;
+  currentLevel = level;
+  markReached(level);
+  setToast(level + "단계(" + PENS[level].name + ")로 워프했습니다!", "success");
+  pulseMedallion();
+  render();
+}
+
+function buyGuard(tierKey){
+  const tier = FAIL_GUARD_TIERS.find(t => t.key === tierKey);
+  if(!tier) return;
+  const price = guardPrice(tier);
+  if(money < price){
+    setToast("자본이 부족합니다.", "fail");
+    return;
+  }
+  money -= price;
+  failGuards[tierKey] = (failGuards[tierKey] || 0) + 1;
+  setToast("실패 방지권(" + tier.label + ")을 구매했습니다.", "success");
+  render();
 }
 
 function renderMyBest(){
@@ -861,11 +1039,18 @@ enhanceBtn.addEventListener("click", () => {
   const rate = successRate(currentLevel);
   if(roll < rate){
     currentLevel += 1;
+    markReached(currentLevel);
     pulseMedallion();
     setToast(PENS[currentLevel].name + "(으)로 강화 성공! (" + rate + "%)", "success");
   } else {
-    setToast(PENS[currentLevel].name + " 강화 실패... 0단계로 돌아갑니다.", "fail");
-    currentLevel = 0;
+    const guardTier = tierForLevel(currentLevel);
+    if(failGuards[guardTier] > 0){
+      failGuards[guardTier] -= 1;
+      setToast("강화에 실패했지만 실패 방지권(" + tierLabel(guardTier) + ")을 사용해 " + currentLevel + "단계를 유지했습니다.", "info");
+    } else {
+      setToast(PENS[currentLevel].name + " 강화 실패... 0단계로 돌아갑니다.", "fail");
+      currentLevel = 0;
+    }
   }
   render();
 });
@@ -876,6 +1061,7 @@ guaranteeBtn.addEventListener("click", () => {
   inventory[currentLevel] -= 3;
   const from = PENS[currentLevel].name;
   currentLevel += 1;
+  markReached(currentLevel);
   pulseMedallion();
   setToast(from + " 3개를 소모해 " + PENS[currentLevel].name + "(으)로 확정 등급업!", "success");
   render();
@@ -896,6 +1082,7 @@ storeBtn.addEventListener("click", () => {
   if(currentLevel > bestEverStoredLevel){
     bestEverStoredLevel = currentLevel;
   }
+  markReached(currentLevel);
   setToast(PENS[currentLevel].name + "을(를) 보관함에 보관했습니다. 새 펜부터 다시 시작합니다.", "info");
   currentLevel = 0;
   render();
@@ -916,12 +1103,14 @@ reviveBtn.addEventListener("click", () => {
 });
 
 resetBtn.addEventListener("click", async () => {
-  const ok = confirm("저장된 자본, 강화 진행상황, 보관함 데이터를 모두 초기화할까요? 랭킹에 등록된 기록은 남아있습니다.");
+  const ok = confirm("저장된 자본, 강화 진행상황, 보관함, 워프권/실패 방지권 데이터를 모두 초기화할까요? 랭킹에 등록된 기록은 남아있습니다.");
   if(!ok) return;
-  money = 5000;
+  money = 10000;
   currentLevel = 0;
   inventory = new Array(PENS.length).fill(0);
   bestEverStoredLevel = -1;
+  maxLevelReached = 0;
+  failGuards = { t1:0, t2:0, t3:0 };
   setToast("데이터가 초기화되었습니다.", "info");
   render();
 });
